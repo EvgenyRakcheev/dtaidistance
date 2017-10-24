@@ -1,8 +1,3 @@
-
-# coding: utf-8
-
-# In[5]:
-
 """
 dtaidistance.dtw - Dynamic Time Warping
 __license__ = "APL"
