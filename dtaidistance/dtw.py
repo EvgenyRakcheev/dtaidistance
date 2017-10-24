@@ -1,21 +1,18 @@
+
+# coding: utf-8
+
+# In[5]:
+
 """
 dtaidistance.dtw - Dynamic Time Warping
-
-__author__ = "Wannes Meert"
-__copyright__ = "Copyright 2016 KU Leuven, DTAI Research Group"
 __license__ = "APL"
-
 ..
     Part of the DTAI distance code.
-
     Copyright 2016 KU Leuven, DTAI Research Group
-
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
     You may obtain a copy of the License at
-
         http://www.apache.org/licenses/LICENSE-2.0
-
     Unless required by applicable law or agreed to in writing, software
     distributed under the License is distributed on an "AS IS" BASIS,
     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -28,7 +25,7 @@ import math
 import numpy as np
 
 logger = logging.getLogger("be.kuleuven.dtai.distance")
-dtaidistance_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), os.pardir)
+#dtaidistance_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), os.pardir)
 
 try:
     from . import dtw_c
@@ -77,7 +74,6 @@ def distance(s1, s2, window=None, max_dist=None,
     :param max_length_diff: Return infinity if length of two series is larger
     :param penalty: Penalty to add if compression or expansion is applied
     :param use_nogil: Use fast pure c compiled functions
-
     Returns: DTW distance
     """
     if use_nogil:
@@ -86,11 +82,11 @@ def distance(s1, s2, window=None, max_dist=None,
                              max_step=max_step,
                              max_length_diff=max_length_diff,
                              penalty=penalty)
-    r, c = len(s1), len(s2)
-    if max_length_diff is not None and abs(r - c) > max_length_diff:
+    s1_len, s2_len = len(s1), len(s2)
+    if max_length_diff is not None and abs(s1_len - s2_len) > max_length_diff:
         return np.inf
     if window is None:
-        window = max(r, c)
+        window = max(s1_len, s2_len)
     if not max_step:
         max_step = np.inf
     else:
@@ -103,57 +99,73 @@ def distance(s1, s2, window=None, max_dist=None,
         penalty = 0
     else:
         penalty *= penalty
-    length = min(c + 1, abs(r - c) + 2 * (window - 1) + 1 + 1 + 1)
-    # print("length (py) = {}".format(length))
-    dtw = np.full((2, length), np.inf)
+    length = min(s2_len + 1, abs(s1_len - s2_len) + 2 * (window - 1) + 1 + 1 + 1)
+    dtw = np.full((s1_len + 1, s2_len + 1), np.inf)
     dtw[0, 0] = 0
     last_under_max_dist = 0
-    skip = 0
     i0 = 1
     i1 = 0
-    for i in range(r):
-        # print("i={}".format(i))
-        # print(dtw)
+    for i in range(s1_len):
         if last_under_max_dist == -1:
             prev_last_under_max_dist = np.inf
         else:
             prev_last_under_max_dist = last_under_max_dist
         last_under_max_dist = -1
-        skipp = skip
-        skip = max(0, i - max(0, r - c) - window + 1)
-        i0 = 1 - i0
-        i1 = 1 - i1
-        dtw[i1, :] = np.inf
-        if dtw.shape[1] == c + 1:
-            skip = 0
-        for j in range(max(0, i - max(0, r - c) - window + 1), min(c, i + max(0, c - r) + window)):
+        i0 = i
+        i1 = i + 1
+        for j in range(max(0, i - max(0, s1_len - s2_len) - window + 1), 
+                       min(s2_len, i + max(0, s2_len - s1_len) + window)):
             d = (s1[i] - s2[j])**2
             if d > max_step:
                 continue
-            assert j + 1 - skip >= 0
-            assert j - skipp >= 0
-            assert j + 1 - skipp >= 0
-            assert j - skip >= 0
-            dtw[i1, j + 1 - skip] = d + min(dtw[i0, j - skipp],
-                                            dtw[i0, j + 1 - skipp] + penalty,
-                                            dtw[i1, j - skip] + penalty)
-            # print('({},{}), ({},{}), ({},{})'.format(i0, j - skipp, i0, j + 1 - skipp, i1, j - skip))
-            # print('{}, {}, {}'.format(dtw[i0, j - skipp], dtw[i0, j + 1 - skipp], dtw[i1, j - skip]))
-            # print('i={}, j={}, d={}, skip={}, skipp={}'.format(i,j,d,skip,skipp))
-            # print(dtw)
-            if dtw[i1, j + 1 - skip] <= max_dist:
+            assert j + 1 >= 0
+            dtw[i1, j + 1] = d + min(dtw[i0, j],
+                                     dtw[i0, j + 1] + penalty,
+                                     dtw[i1, j] + penalty)
+            if dtw[i1, j + 1] <= max_dist:
                 last_under_max_dist = j
             else:
-                # print('above max_dist', dtw[i1, j + 1 - skip], i1, j + 1 - skip)
-                dtw[i1, j + 1 - skip] = np.inf
-                if prev_last_under_max_dist + 1 - skipp < j + 1 - skip:
-                    # print("break")
+                dtw[i1, j + 1] = np.inf
+                if prev_last_under_max_dist < j + 1:
                     break
         if last_under_max_dist == -1:
             # print('early stop')
-            # print(dtw)
             return np.inf
-    return math.sqrt(dtw[i1, min(c, c + window - 1) - skip])
+    matrix = dtw
+    path = []
+    cur_i, cur_j = matrix.shape
+    cur_i -= 1
+    cur_j -= 1
+    cur_cell = matrix[cur_i, cur_j]
+    path.append((cur_i - 1, cur_j - 1))
+    while cur_i > 1 or cur_j > 1:
+        s1_len_cur, s2_len_cur = cur_i, cur_j
+        if cur_i >= 1 and cur_j >= 1 and matrix[cur_i - 1, cur_j - 1] <= cur_cell:
+            s1_len_cur, s2_len_cur, cur_cell = cur_i - 1, cur_j - 1, matrix[cur_i - 1, cur_j - 1]
+            
+        if cur_i >= 1 and matrix[cur_i - 1, cur_j] <= cur_cell:
+            s1_len_cur, s2_len_cur, cur_cell = cur_i - 1, cur_j, matrix[cur_i - 1, cur_j]
+            
+        if cur_j >= 1 and matrix[cur_i, cur_j - 1] <= cur_cell:
+            s1_len_cur, s2_len_cur, cur_cell = cur_i, cur_j - 1, matrix[cur_i, cur_j - 1]
+            
+        path.append((s1_len_cur - 1, s2_len_cur - 1))
+        cur_i, cur_j = s1_len_cur, s2_len_cur
+    path.reverse()
+    path_begin = 0
+    path_end = []
+    end_number = 0
+    for num_ind, ind in enumerate(path):
+        if 0 in ind:
+            path_begin = ind
+        if ind[0] == s1_len - 1 or ind[1] == s2_len - 1:
+            path_end.append(ind)
+            end_number = num_ind
+    result = dtw[s1_len, s2_len] - dtw[path_begin[0] + 1][path_begin[1] + 1] +              (s1[path_begin[0]]-s2[path_begin[1]])**2
+    if len(path_end) > 1:
+        for ind in path_end[1:]:
+            result -= (s1[ind[0]]-s2[ind[1]])**2
+    return math.sqrt(result)
 
 
 def distance_fast(s1, s2, window=None, max_dist=None,
@@ -199,7 +211,6 @@ def distances(s1, s2, window=None, max_dist=None,
     :param max_step: Do not allow steps larger than this value
     :param max_length_diff: Return infinity if length of two series is larger
     :param penalty: Penalty to add if compression or expansion is applied
-
     Returns: DTW distance, DTW matrix
     """
     r, c = len(s1), len(s2)
@@ -279,7 +290,6 @@ def distance_matrix(s, max_dist=None, max_length_diff=None,
                     parallel=False,
                     use_c=False, use_nogil=False, show_progress=False):
     """Distance matrix for all sequences in s.
-
     :param s: Iterable of series
     :param window: Only allow for shifts up to this amount away from the two diagonals
     :param max_dist: Stop if the returned values will be larger than this value
@@ -464,8 +474,14 @@ def plot_warping(s1, s2, **kwargs):
                                       transform=fig.transFigure, **line_options))
     fig.lines = lines
     plt.show(block=True)
-
+    
 
 def _print_library_missing():
     logger.error("The compiled dtaidistance c library is not available.\n" +
                  "Run `cd {};python3 setup.py build_ext --inplace`.".format(dtaidistance_dir))
+
+
+# In[ ]:
+
+
+
