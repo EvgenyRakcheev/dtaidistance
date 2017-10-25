@@ -20,7 +20,7 @@ import math
 import numpy as np
 
 logger = logging.getLogger("be.kuleuven.dtai.distance")
-#dtaidistance_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), os.pardir)
+dtaidistance_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), os.pardir)
 
 try:
     from . import dtw_c
@@ -160,7 +160,8 @@ def distance(s1, s2, window=None, max_dist=None,
     if len(path_end) > 1:
         for ind in path_end[1:]:
             result -= (s1[ind[0]]-s2[ind[1]])**2
-    return math.sqrt(result)
+    result = abs(result)
+    return sqrt(result)
 
 
 def distance_fast(s1, s2, window=None, max_dist=None,
