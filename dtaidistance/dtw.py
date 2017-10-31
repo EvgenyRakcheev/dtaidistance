@@ -23,7 +23,7 @@ logger = logging.getLogger("be.kuleuven.dtai.distance")
 dtaidistance_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), os.pardir)
 
 try:
-    from . import dtw_c
+    import dtw_c
 except ImportError:
     # logger.info('C library not available')
     dtw_c = None
@@ -108,15 +108,22 @@ def distance(s1, s2, window=None, max_dist=None,
         last_under_max_dist = -1
         i0 = i
         i1 = i + 1
-        for j in range(max(0, i - max(0, s1_len - s2_len) - window + 1), 
-                       min(s2_len, i + max(0, s2_len - s1_len) + window)):
+        for j in range(s2_len):
             d = (s1[i] - s2[j])**2
             if d > max_step:
                 continue
             assert j + 1 >= 0
-            dtw[i1, j + 1] = d + min(dtw[i0, j],
-                                     dtw[i0, j + 1] + penalty,
-                                     dtw[i1, j] + penalty)
+            dtw[i1, j + 1] = d
+            if j == s2_len - 1:
+                dtw[i1, j + 1] = min(d + dtw[i0, j],
+                                     dtw[i0, j + 1],
+                                     d + dtw[i1, j] + penalty)
+            elif j == 0:
+                dtw[i1, j + 1] = d
+            else:
+                dtw[i1, j + 1] = d + min(dtw[i0, j],
+                                         dtw[i0, j + 1] + penalty,
+                                         dtw[i1, j] + penalty)
             if dtw[i1, j + 1] <= max_dist:
                 last_under_max_dist = j
             else:
@@ -126,42 +133,8 @@ def distance(s1, s2, window=None, max_dist=None,
         if last_under_max_dist == -1:
             # print('early stop')
             return np.inf
-    matrix = dtw
-    path = []
-    cur_i, cur_j = matrix.shape
-    cur_i -= 1
-    cur_j -= 1
-    cur_cell = matrix[cur_i, cur_j]
-    path.append((cur_i - 1, cur_j - 1))
-    while cur_i > 1 or cur_j > 1:
-        s1_len_cur, s2_len_cur = cur_i, cur_j
-        if cur_i >= 1 and cur_j >= 1 and matrix[cur_i - 1, cur_j - 1] <= cur_cell:
-            s1_len_cur, s2_len_cur, cur_cell = cur_i - 1, cur_j - 1, matrix[cur_i - 1, cur_j - 1]
-            
-        if cur_i >= 1 and matrix[cur_i - 1, cur_j] <= cur_cell:
-            s1_len_cur, s2_len_cur, cur_cell = cur_i - 1, cur_j, matrix[cur_i - 1, cur_j]
-            
-        if cur_j >= 1 and matrix[cur_i, cur_j - 1] <= cur_cell:
-            s1_len_cur, s2_len_cur, cur_cell = cur_i, cur_j - 1, matrix[cur_i, cur_j - 1]
-            
-        path.append((s1_len_cur - 1, s2_len_cur - 1))
-        cur_i, cur_j = s1_len_cur, s2_len_cur
-    path.reverse()
-    path_begin = 0
-    path_end = []
-    end_number = 0
-    for num_ind, ind in enumerate(path):
-        if 0 in ind:
-            path_begin = ind
-        if ind[0] == s1_len - 1 or ind[1] == s2_len - 1:
-            path_end.append(ind)
-            end_number = num_ind
-    result = dtw[s1_len, s2_len] - dtw[path_begin[0] + 1][path_begin[1] + 1] +              (s1[path_begin[0]]-s2[path_begin[1]])**2
-    if len(path_end) > 1:
-        for ind in path_end[1:]:
-            result -= (s1[ind[0]]-s2[ind[1]])**2
-    result = abs(result)
-    return sqrt(result)
+    result = dtw[s1_len, s2_len]
+    return np.sqrt(result)
 
 
 def distance_fast(s1, s2, window=None, max_dist=None,
@@ -248,15 +221,23 @@ def distances(s1, s2, window=None, max_dist=None,
         # print(x,y,dtw[i+1, jmin+1-skip:jmax+1-skip])
         # dtw[i+1, jmin+1-skip:jmax+1-skip] = np.minimum(x,
         #                                                y)
-        for j in range(max(0, i - max(0, r - c) - window + 1), min(c, i + max(0, c - r) + window)):
+        for j in range(c):
             # print('j =', j, 'max=',min(c, c - r + i + window))
             d = (s1[i] - s2[j])**2
             if max_step is not None and d > max_step:
                 continue
             # print(i, j + 1 - skip, j - skipp, j + 1 - skipp, j - skip)
-            dtw[i1, j + 1] = d + min(dtw[i0, j],
-                                     dtw[i0, j + 1] + penalty,
-                                     dtw[i1, j] + penalty)
+            dtw[i1, j + 1] = d
+            if j == c - 1:
+                dtw[i1, j + 1] = min(d + dtw[i0, j],
+                                     dtw[i0, j + 1],
+                                     d + dtw[i1, j] + penalty)
+            elif j == 0:
+                dtw[i1, j + 1] = d
+            else:
+                dtw[i1, j + 1] = d + min(dtw[i0, j],
+                                         dtw[i0, j + 1] + penalty,
+                                         dtw[i1, j] + penalty)
             # dtw[i + 1, j + 1 - skip] = d + min(dtw[i + 1, j + 1 - skip], dtw[i + 1, j - skip])
             if max_dist is not None:
                 if dtw[i1, j + 1] <= max_dist:
@@ -270,7 +251,7 @@ def distances(s1, s2, window=None, max_dist=None,
             # print(dtw)
             return np.inf, dtw
     dtw = np.sqrt(dtw)
-    return dtw[i1, min(c, c + window - 1)], dtw
+    return dtw[r, c], dtw
 
 
 def distance_matrix_func(use_c=False, use_nogil=False, parallel=False, show_progress=False):
@@ -390,23 +371,40 @@ def distance_matrix_fast(s, max_dist=None, max_length_diff=None,
 
 def warp_path(from_s, to_s, **kwargs):
     dists = distances(from_s, to_s, **kwargs)
+    if kwargs is not None:
+        if 'penalty' in kwargs:
+            penalty = kwargs['penalty']
+        else:
+            penalty = 0
+    else:
+        penalty = 0
     m = dists[1]
     path = []
-    r, c = m.shape
-    r -= 1
-    c -= 1
-    v = m[r, c]
-    path.append((r - 1, c - 1))
-    while r > 1 or c > 1:
-        r_c, c_c = r, c
-        if r >= 1 and c >= 1 and m[r - 1, c - 1] <= v:
-            r_c, c_c, v = r - 1, c - 1, m[r - 1, c - 1]
-        if r >= 1 and m[r - 1, c] <= v:
-            r_c, c_c, v = r - 1, c, m[r - 1, c]
-        if c >= 1 and m[r, c - 1] <= v:
-            r_c, c_c, v = r, c - 1, m[r, c - 1]
-        path.append((r_c - 1, c_c - 1))
-        r, c = r_c, c_c
+    r = np.shape(m)[0]
+    c = np.shape(m)[1]
+    y_size = np.shape(m)[0]
+    x_size = np.shape(m)[1]
+    v = m[r - 1, c - 1]
+    path.append((r - 2, c - 2))
+    while r != 2 or c != 2:
+        d = (from_s[r - 2] - to_s[c - 2])**2
+        if c == x_size:
+            cells = [m[r - 2, c - 2] + d, m[r - 2, c - 1], m[r - 1, c - 2] + d + penalty]
+        elif c == 2:
+            cells = [np.inf, d, np.inf]
+        else:
+            cells = [m[r - 2, c - 2], m[r - 2, c - 1] + penalty, m[r - 1, c - 2] + penalty]
+        ind = np.argmin(cells)
+        if ind == 0:
+            path.append((r - 3, c - 3))
+            r -= 1
+            c -= 1
+        if ind == 1:
+            path.append((r - 3, c - 2))
+            r -= 1
+        if ind == 2:
+            path.append((r - 2, c - 3))
+            c -= 1
     path.reverse()
     return path
 
@@ -475,9 +473,5 @@ def plot_warping(s1, s2, **kwargs):
 def _print_library_missing():
     logger.error("The compiled dtaidistance c library is not available.\n" +
                  "Run `cd {};python3 setup.py build_ext --inplace`.".format(dtaidistance_dir))
-
-
-# In[ ]:
-
 
 
