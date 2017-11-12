@@ -18,12 +18,14 @@ import os
 import logging
 import math
 import numpy as np
+import pyximport
+pyximport.install()
 
 logger = logging.getLogger("be.kuleuven.dtai.distance")
 dtaidistance_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), os.pardir)
 
 try:
-    import dtw_c
+    from . import dtw_c
 except ImportError:
     # logger.info('C library not available')
     dtw_c = None
@@ -109,21 +111,21 @@ def distance(s1, s2, window=None, max_dist=None,
         i0 = i
         i1 = i + 1
         for j in range(s2_len):
-            d = (s1[i] - s2[j])**2
-            if d > max_step:
+            dist = (s1[i] - s2[j])**2
+            if dist > max_step:
                 continue
             assert j + 1 >= 0
-            dtw[i1, j + 1] = d
+            dtw[i1, j + 1] = dist
             if j == s2_len - 1:
-                dtw[i1, j + 1] = min(d + dtw[i0, j],
+                dtw[i1, j + 1] = min(dist + dtw[i0, j],
                                      dtw[i0, j + 1],
-                                     d + dtw[i1, j] + penalty)
+                                     dist + dtw[i1, j] + penalty)
             elif j == 0:
-                dtw[i1, j + 1] = d
+                dtw[i1, j + 1] = dist
             else:
-                dtw[i1, j + 1] = d + min(dtw[i0, j],
-                                         dtw[i0, j + 1] + penalty,
-                                         dtw[i1, j] + penalty)
+                dtw[i1, j + 1] = dist + min(dtw[i0, j],
+                                            dtw[i0, j + 1] + penalty,
+                                            dtw[i1, j] + penalty)
             if dtw[i1, j + 1] <= max_dist:
                 last_under_max_dist = j
             else:
@@ -153,12 +155,12 @@ def distance_fast(s1, s2, window=None, max_dist=None,
         max_length_diff = 0
     if penalty is None:
         penalty = 0
-    d = dtw_c.distance_nogil(s1, s2, window,
-                             max_dist=max_dist,
-                             max_step=max_step,
-                             max_length_diff=max_length_diff,
-                             penalty=penalty)
-    return d
+    dist = dtw_c.distance_nogil(s1, s2, window,
+                                max_dist=max_dist,
+                                max_step=max_step,
+                                max_length_diff=max_length_diff,
+                                penalty=penalty)
+    return dist
 
 
 def _distance_with_params(t):
@@ -182,11 +184,11 @@ def distances(s1, s2, window=None, max_dist=None,
     :param penalty: Penalty to add if compression or expansion is applied
     Returns: DTW distance, DTW matrix
     """
-    r, c = len(s1), len(s2)
-    if max_length_diff is not None and abs(r - c) > max_length_diff:
+    rows, columns = len(s1), len(s2)
+    if max_length_diff is not None and abs(rows - columns) > max_length_diff:
         return np.inf
     if window is None:
-        window = max(r, c)
+        window = max(rows, columns)
     if not max_step:
         max_step = np.inf
     else:
@@ -199,12 +201,12 @@ def distances(s1, s2, window=None, max_dist=None,
         penalty = 0
     else:
         penalty *= penalty
-    dtw = np.full((r + 1, c + 1), np.inf)
+    dtw = np.full((rows + 1, columns + 1), np.inf)
     dtw[0, 0] = 0
     last_under_max_dist = 0
     i0 = 1
     i1 = 0
-    for i in range(r):
+    for i in range(rows):
         if last_under_max_dist == -1:
             prev_last_under_max_dist = np.inf
         else:
@@ -212,33 +214,21 @@ def distances(s1, s2, window=None, max_dist=None,
         last_under_max_dist = -1
         i0 = i
         i1 = i + 1
-        # print('i =', i, 'skip =',skip, 'skipp =', skipp)
-        # jmin = max(0, i - max(0, r - c) - window + 1)
-        # jmax = min(c, i + max(0, c - r) + window)
-        # print(i,jmin,jmax)
-        # x = dtw[i, jmin-skipp:jmax-skipp]
-        # y = dtw[i, jmin+1-skipp:jmax+1-skipp]
-        # print(x,y,dtw[i+1, jmin+1-skip:jmax+1-skip])
-        # dtw[i+1, jmin+1-skip:jmax+1-skip] = np.minimum(x,
-        #                                                y)
-        for j in range(c):
-            # print('j =', j, 'max=',min(c, c - r + i + window))
-            d = (s1[i] - s2[j])**2
-            if max_step is not None and d > max_step:
+        for j in range(columns):
+            dist = (s1[i] - s2[j])**2
+            if max_step is not None and dist > max_step:
                 continue
-            # print(i, j + 1 - skip, j - skipp, j + 1 - skipp, j - skip)
-            dtw[i1, j + 1] = d
-            if j == c - 1:
-                dtw[i1, j + 1] = min(d + dtw[i0, j],
+            dtw[i1, j + 1] = dist
+            if j == columns - 1:
+                dtw[i1, j + 1] = min(dist + dtw[i0, j],
                                      dtw[i0, j + 1],
-                                     d + dtw[i1, j] + penalty)
+                                     dist + dtw[i1, j] + penalty)
             elif j == 0:
-                dtw[i1, j + 1] = d
+                dtw[i1, j + 1] = dist
             else:
-                dtw[i1, j + 1] = d + min(dtw[i0, j],
-                                         dtw[i0, j + 1] + penalty,
-                                         dtw[i1, j] + penalty)
-            # dtw[i + 1, j + 1 - skip] = d + min(dtw[i + 1, j + 1 - skip], dtw[i + 1, j - skip])
+                dtw[i1, j + 1] = dist + min(dtw[i0, j],
+                                            dtw[i0, j + 1] + penalty,
+                                            dtw[i1, j] + penalty)
             if max_dist is not None:
                 if dtw[i1, j + 1] <= max_dist:
                     last_under_max_dist = j
@@ -247,11 +237,9 @@ def distances(s1, s2, window=None, max_dist=None,
                     if prev_last_under_max_dist < j + 1:
                         break
         if max_dist is not None and last_under_max_dist == -1:
-            # print('early stop')
-            # print(dtw)
             return np.inf, dtw
     dtw = np.sqrt(dtw)
-    return dtw[r, c], dtw
+    return dtw[rows, columns], dtw
 
 
 def distance_matrix_func(use_c=False, use_nogil=False, parallel=False, show_progress=False):
@@ -300,9 +288,9 @@ def distance_matrix(s, max_dist=None, max_length_diff=None,
     large_value = np.inf
     logger.info('Computing distances')
     if use_c:
-        for k, v in dist_opts.items():
-            if v is None:
-                dist_opts[k] = 0.0
+        for key, value in dist_opts.items():
+            if value is None:
+                dist_opts[key] = 0.0
     if use_c and use_nogil:
         logger.info("Compute distances in pure C")
         if parallel:
@@ -318,41 +306,36 @@ def distance_matrix(s, max_dist=None, max_length_diff=None,
             dists = np.zeros((len(s), len(s))) + large_value
             idxs = np.triu_indices(len(s), k=1)
             with mp.Pool() as p:
-                dists[idxs] = p.map(_distance_c_with_params, [(s[r], s[c], dist_opts) for c, r in zip(*idxs)])
-                # pbar = tqdm(total=int((len(s)*(len(s)-1)/2)))
-                # for r in range(len(s)):
-                #     dists[r,r+1:len(s)] = p.map(distance, [(s[r],s[c], dist_opts) for c in range(r+1,len(cur))])
-                #     pbar.update(len(s) - r - 1)
-                # pbar.close()
+                dists[idxs] = p.map(_distance_c_with_params,
+                                    [(s[row], s[column], dist_opts) for column, row in zip(*idxs)])
         else:
             logger.info("Use serial computation")
             dists = dtw_c.distance_matrix(s, **dist_opts)
     if not use_c:
         logger.info("Compute distances in Python")
         if isinstance(s, np.matrix):
-            ss = [np.asarray(s[i]).reshape(-1) for i in range(s.shape[0])]
-            s = ss
+            s_reshaped = [np.asarray(s[i]).reshape(-1) for i in range(s.shape[0])]
+            s = s_reshaped
         if parallel:
             logger.info("Use parallel computation")
             dists = np.zeros((len(s), len(s))) + large_value
             idxs = np.triu_indices(len(s), k=1)
             with mp.Pool() as p:
-                dists[idxs] = p.map(_distance_with_params, [(s[r], s[c], dist_opts) for c, r in zip(*idxs)])
-                # pbar = tqdm(total=int((len(s)*(len(s)-1)/2)))
-                # for r in range(len(s)):
-                #     dists[r,r+1:len(s)] = p.map(distance, [(s[r],s[c], dist_opts) for c in range(r+1,len(cur))])
-                #     pbar.update(len(s) - r - 1)
-                # pbar.close()
+                dists[idxs] = p.map(_distance_with_params,
+                                    [(s[row], s[column], dist_opts) for column, row in zip(*idxs)])
         else:
             logger.info("Use serial computation")
             dists = np.zeros((len(s), len(s))) + large_value
             it_r = range(len(s))
             if show_progress:
                 it_r = tqdm(it_r)
-            for r in it_r:
-                for c in range(r + 1, len(s)):
-                    if abs(len(s[r]) - len(s[c])) <= max_length_diff:
-                        dists[r, c] = distance(s[r], s[c], **dist_opts)
+            for row in it_r:
+                for column in range(row + 1, len(s)):
+                    if abs(len(s[row]) - len(s[column])) <= max_length_diff:
+                        first_dist = distance(s[row], s[column], **dist_opts)
+                        second_dist = distance(s[column], s[row], **dist_opts)
+                        dists[row, column] = min(first_dist, second_dist)
+
     return dists
 
 
@@ -378,33 +361,37 @@ def warp_path(from_s, to_s, **kwargs):
             penalty = 0
     else:
         penalty = 0
-    m = dists[1]
+    matrix = dists[1]
     path = []
-    r = np.shape(m)[0]
-    c = np.shape(m)[1]
-    y_size = np.shape(m)[0]
-    x_size = np.shape(m)[1]
-    v = m[r - 1, c - 1]
-    path.append((r - 2, c - 2))
-    while r != 2 or c != 2:
-        d = (from_s[r - 2] - to_s[c - 2])**2
-        if c == x_size:
-            cells = [m[r - 2, c - 2] + d, m[r - 2, c - 1], m[r - 1, c - 2] + d + penalty]
-        elif c == 2:
-            cells = [np.inf, d, np.inf]
+    row = np.shape(matrix)[0]
+    column = np.shape(matrix)[1]
+    y_size = np.shape(matrix)[0]
+    x_size = np.shape(matrix)[1]
+    v = matrix[row - 1, column - 1]
+    path.append((row - 2, column - 2))
+    while row != 2 or column != 2:
+        dist = (from_s[row - 2] - to_s[column - 2])**2
+        if column == x_size:
+            cells = [matrix[row - 2, column - 2] + dist,
+                     matrix[row - 2, column - 1],
+                     matrix[row - 1, column - 2] + dist + penalty]
+        elif column == 2:
+            cells = [np.inf, dist, np.inf]
         else:
-            cells = [m[r - 2, c - 2], m[r - 2, c - 1] + penalty, m[r - 1, c - 2] + penalty]
+            cells = [matrix[row - 2, column - 2],
+                     matrix[row - 2, column - 1] + penalty,
+                     matrix[row - 1, column - 2] + penalty]
         ind = np.argmin(cells)
         if ind == 0:
-            path.append((r - 3, c - 3))
-            r -= 1
-            c -= 1
+            path.append((row - 3, column - 3))
+            row -= 1
+            column -= 1
         if ind == 1:
-            path.append((r - 3, c - 2))
-            r -= 1
+            path.append((row - 3, column - 2))
+            row -= 1
         if ind == 2:
-            path.append((r - 2, c - 3))
-            c -= 1
+            path.append((row - 2, column - 3))
+            column -= 1
     path.reverse()
     return path
 
@@ -416,9 +403,9 @@ def warp(from_s, to_s, plot=False, **kwargs):
     path = warp_path(from_s, to_s, **kwargs)
     from_s2 = np.zeros(len(to_s))
     from_s2_cnt = np.zeros(len(to_s))
-    for r_c, c_c in path:
-        from_s2[c_c] += from_s[r_c]
-        from_s2_cnt[c_c] += 1
+    for ind_s1, ind_s2 in path:
+        from_s2[ind_s2] += from_s[ind_s1]
+        from_s2_cnt[ind_s2] += 1
     from_s2 /= from_s2_cnt
 
     if plot:
@@ -468,10 +455,73 @@ def plot_warping(s1, s2, **kwargs):
                                       transform=fig.transFigure, **line_options))
     fig.lines = lines
     plt.show(block=True)
-    
+
+
+def subsequence(s1, s2, penalty=0):
+    path = warp_path(s1, s2, penalty=penalty)
+    left_bound = 0
+    right_bound = len(s2) - 1
+    fl = 1
+    for pair in path:
+        if pair[1] == left_bound:
+            begin = pair
+        if pair[1] == right_bound and fl:
+            end = pair
+            fl = 0
+    return begin[0], end[0]
+
+
+def mean_cluster(clust_data):
+    mean_s = medoid(clust_data)
+    iter_num = 30  # set any iter_num > 0
+    for i in range(iter_num):
+        mean_s = mean_update(mean_s, clust_data)
+    return mean_s
+
+
+def medoid(clust_data):
+    matrix = distance_matrix(clust_data)
+    size = np.shape(matrix)[0]
+    for i in range(size):
+        for j in range(size):
+            if i > j:
+                matrix[i][j] = matrix[j][i]
+            if i == j:
+                matrix[i][j] = 0
+    min_ind = np.argmin([np.sum([matrix[i][j]**2 for j in range(len(matrix[i]))])
+                         for i in range(size)])
+    return clust_data[min_ind]
+
+
+def mean_update(mean_s, clust_data):
+    length = len(mean_s)
+    alignment = [[] for i in range(length)]
+    for el in clust_data:
+        alignment_el = dtw_multiple_alignment(mean_s, el)
+        for i in range(length):
+            for j in range(len(alignment_el[i])):
+                alignment[i].append(alignment_el[i][j])
+    mean_sequence = [0.0 for i in range(length)]
+    for i in range(length):
+        mean_sequence[i] = np.mean(alignment[i])
+    return mean_sequence
+
+
+def dtw_multiple_alignment(mean_s, el):
+    length = len(mean_s)
+    path = warp_path(el, mean_s)
+    alignment = [[] for i in range(length)]
+    j = 0
+    for i in range(length):
+        while path[j][1] == i:
+            alignment[i].append(el[path[j][0]])
+            j += 1
+            if j == len(path):
+                break
+    return alignment
+
 
 def _print_library_missing():
     logger.error("The compiled dtaidistance c library is not available.\n" +
                  "Run `cd {};python3 setup.py build_ext --inplace`.".format(dtaidistance_dir))
-
 
